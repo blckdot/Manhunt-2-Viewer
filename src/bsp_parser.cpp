@@ -69,19 +69,32 @@ BSPFile LoadBSP(const std::string& filepath, BSPLoadOptions options) {
     }
 
     // Material Name Resolution from Material Table (0x50 / 0x54)
-    if (dataLen >= 0x54) {
-        uint32_t tableOffset = ReadLE<uint32_t>(data, dataLen, 0x50);
-        uint32_t count = ReadLE<uint32_t>(data, dataLen, 0x54);
-        if (tableOffset != 0 && tableOffset + count * 12 <= dataLen && count < 5000) {
-            for (uint32_t i = 0; i < count; i++) {
-                uint32_t entryOffset = tableOffset + i * 12;
-                uint32_t nameOffset = ReadLE<uint32_t>(data, dataLen, entryOffset);
-                if (nameOffset != 0 && nameOffset < dataLen) {
-                    const char* name = reinterpret_cast<const char*>(data + nameOffset);
-                    result.materialNames.push_back(name);
-                } else {
-                    result.materialNames.push_back("");
+    if (dataLen >= 0x58) {
+        const uint32_t tableOffset = ReadLE<uint32_t>(data, dataLen, 0x50);
+        const uint32_t count = ReadLE<uint32_t>(data, dataLen, 0x54);
+        if (tableOffset != 0 && count < 5000) {
+            const size_t tableOffsetSz = static_cast<size_t>(tableOffset);
+            const size_t tableSize = static_cast<size_t>(count) * 12u;
+            if (tableOffsetSz + tableSize <= dataLen) {
+                result.materialNames.reserve(count);
+                bool anyNonEmpty = false;
+                for (uint32_t i = 0; i < count; i++) {
+                    const uint32_t entryOffset = tableOffset + i * 12u;
+                    const uint32_t nameOffset = ReadLE<uint32_t>(data, dataLen, entryOffset);
+                    if (nameOffset != 0 && nameOffset < dataLen) {
+                        const uint8_t* start = data + nameOffset;
+                        const void* nul = std::memchr(start, 0, dataLen - nameOffset);
+                        if (nul != nullptr) {
+                            const char* cStart = reinterpret_cast<const char*>(start);
+                            const char* cEnd = reinterpret_cast<const char*>(nul);
+                            result.materialNames.emplace_back(cStart, static_cast<size_t>(cEnd - cStart));
+                            anyNonEmpty |= !result.materialNames.back().empty();
+                            continue;
+                        }
+                    }
+                    result.materialNames.emplace_back("");
                 }
+                if (!anyNonEmpty) result.materialNames.clear();
             }
         }
     }
@@ -98,9 +111,13 @@ BSPFile LoadBSP(const std::string& filepath, BSPLoadOptions options) {
                     if (ptr3 != 0 && ptr3 < dataLen) {
                         size_t sPos = ptr3;
                         while (sPos < dataLen && data[sPos] != 0) {
-                            const char* name = reinterpret_cast<const char*>(data + sPos);
+                            size_t len = 0;
+                            while (sPos + len < dataLen && data[sPos + len] != '\0') {
+                                len++;
+                            }
+                            std::string name(reinterpret_cast<const char*>(data + sPos), len);
                             result.materialNames.push_back(name);
-                            sPos += strlen(name) + 1;
+                            sPos += len + 1;
                             if (result.materialNames.size() > 5000) break;
                         }
                     }
@@ -117,9 +134,13 @@ BSPFile LoadBSP(const std::string& filepath, BSPLoadOptions options) {
             if (f2 != 0 && f2 < dataLen) {
                 size_t sPos = f2;
                 while (sPos < dataLen && data[sPos] != 0) {
-                    const char* name = reinterpret_cast<const char*>(data + sPos);
+                    size_t len = 0;
+                    while (sPos + len < dataLen && data[sPos + len] != '\0') {
+                        len++;
+                    }
+                    std::string name(reinterpret_cast<const char*>(data + sPos), len);
                     result.materialNames.push_back(name);
-                    sPos += strlen(name) + 1;
+                    sPos += len + 1;
                     if (result.materialNames.size() > 5000) break;
                 }
             }
