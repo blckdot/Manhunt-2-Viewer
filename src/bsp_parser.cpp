@@ -68,8 +68,26 @@ BSPFile LoadBSP(const std::string& filepath, BSPLoadOptions options) {
         return result;
     }
 
-    // Material Name Resolution
-    if (dataLen >= 24) {
+    // Material Name Resolution from Material Table (0x50 / 0x54)
+    if (dataLen >= 0x54) {
+        uint32_t tableOffset = ReadLE<uint32_t>(data, dataLen, 0x50);
+        uint32_t count = ReadLE<uint32_t>(data, dataLen, 0x54);
+        if (tableOffset != 0 && tableOffset + count * 12 <= dataLen && count < 5000) {
+            for (uint32_t i = 0; i < count; i++) {
+                uint32_t entryOffset = tableOffset + i * 12;
+                uint32_t nameOffset = ReadLE<uint32_t>(data, dataLen, entryOffset);
+                if (nameOffset != 0 && nameOffset < dataLen) {
+                    const char* name = reinterpret_cast<const char*>(data + nameOffset);
+                    result.materialNames.push_back(name);
+                } else {
+                    result.materialNames.push_back("");
+                }
+            }
+        }
+    }
+
+    // Fallback 1: Original pointer indirection method
+    if (result.materialNames.empty() && dataLen >= 24) {
         uint32_t offsetTablePos = ReadLE<uint32_t>(data, dataLen, 12);
         if (offsetTablePos != 0 && offsetTablePos < dataLen) {
             uint32_t ptr1 = ReadLE<uint32_t>(data, dataLen, offsetTablePos);
@@ -91,7 +109,7 @@ BSPFile LoadBSP(const std::string& filepath, BSPLoadOptions options) {
         }
     }
 
-    // Fallback for material strings at 0x50
+    // Fallback 2: Original consecutive scanning from first string in 0x50
     if (result.materialNames.empty() && dataLen >= 0x54) {
         uint32_t f1 = ReadLE<uint32_t>(data, dataLen, 0x50);
         if (f1 != 0 && f1 < dataLen) {
